@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -14,8 +15,6 @@
     background: #1976d2; color: white; border: none; border-radius: 12px;
     cursor: pointer; box-shadow: 0 3px 6px rgba(0,0,0,0.2);
   }
-  #btnEscanear:disabled { background: #9e9e9e; }
-  #btnEscanear.escaneando { background: #d32f2f; }
   #estado {
     margin: 16px 0; padding: 12px; background: white;
     border-radius: 8px; border-left: 4px solid #1976d2; font-size: 16px;
@@ -34,9 +33,9 @@
 </head>
 <body>
 <h1>🧪 Lab BLE</h1>
-<p class="subtitulo">Experimento para Ruta Segura. Escanea tags cercanos.</p>
+<p class="subtitulo">Experimento para Ruta Segura. Busca tags cercanos.</p>
 
-<button id="btnEscanear">📡 Empezar a escanear</button>
+<button id="btnEscanear">📡 Buscar dispositivos</button>
 <div id="estado">Esperando...</div>
 <div id="lista"><p class="vacio">Todavía no hay dispositivos cerca</p></div>
 
@@ -44,8 +43,6 @@
 const btn = document.getElementById('btnEscanear');
 const estado = document.getElementById('estado');
 const lista = document.getElementById('lista');
-let escaneando = false;
-let scan = null;
 const vistos = new Map();
 
 if (!('bluetooth' in navigator)) {
@@ -59,12 +56,12 @@ function actualizarLista() {
     lista.innerHTML = '<p class="vacio">Todavía no hay dispositivos cerca</p>';
     return;
   }
-  const ordenados = [...vistos.values()].sort((a, b) => b.rssi - a.rssi);
+  const ordenados = [...vistos.values()].sort((a, b) => (b.rssi ?? -999) - (a.rssi ?? -999));
   lista.innerHTML = ordenados.map(d => `
     <div class="dispositivo">
-      <strong>${d.nombre || '🔇 Sin nombre'}</strong>
+      <strong>${d.nombre}</strong>
       <small>ID: ${d.id}</small>
-      <span class="rssi">Señal: ${d.rssi} dBm</span>
+      ${d.rssi !== null ? `<span class="rssi">Señal: ${d.rssi} dBm</span>` : ''}
       <small>Visto hace ${Math.round((Date.now() - d.ultimaVez) / 1000)}s</small>
     </div>
   `).join('');
@@ -72,42 +69,30 @@ function actualizarLista() {
 
 async function empezar() {
   try {
-    estado.innerHTML = '⏳ Pidiendo permiso para escanear...';
-    scan = await navigator.bluetooth.requestLEScan({
-      acceptAllAdvertisements: true
-    });
-    escaneando = true;
-    btn.textContent = '⏹️ Detener escaneo';
-    btn.classList.add('escaneando');
-    estado.innerHTML = '✅ Escaneando. Acercá el celu al tag.';
-
-    navigator.bluetooth.addEventListener('advertisementreceived', event => {
-      const id = event.device.id;
-      const nombre = event.device.name || 'Sin nombre';
-      vistos.set(id, {
-        id: id,
-        nombre: nombre,
-        rssi: event.rssi,
-        ultimaVez: Date.now()
+    estado.innerHTML = '⏳ Abriendo el buscador de dispositivos...';
+    const device = await navigator.bluetooth.requestDevice({ acceptAllDevices: true });
+    const nombre = device.name || 'Sin nombre';
+    vistos.set(device.id, { id: device.id, nombre: nombre, rssi: null, ultimaVez: Date.now() });
+    actualizarLista();
+    estado.innerHTML = '✅ Encontrado: <strong>' + nombre + '</strong>. Tocá de nuevo para buscar otro.';
+    try {
+      device.watchAdvertisements().catch(() => {});
+      device.addEventListener('advertisementreceived', ev => {
+        const d = vistos.get(device.id);
+        if (d) { d.rssi = ev.rssi; d.ultimaVez = Date.now(); actualizarLista(); }
       });
-      actualizarLista();
-    });
+    } catch (e) {}
   } catch (e) {
-    estado.innerHTML = '❌ Error: ' + e.message;
-    estado.style.borderLeftColor = '#d32f2f';
+    if (e.name === 'NotFoundError') {
+      estado.innerHTML = '⚠️ No elegiste ningún dispositivo. Tocá de nuevo y elegí RS-LLAVES-01.';
+    } else {
+      estado.innerHTML = '❌ Error: ' + e.message;
+      estado.style.borderLeftColor = '#d32f2f';
+    }
   }
 }
 
-function detener() {
-  if (scan) scan.stop();
-  escaneando = false;
-  btn.textContent = '📡 Empezar a escanear';
-  btn.classList.remove('escaneando');
-  estado.innerHTML = '⏸️ Escaneo detenido.';
-}
-
-btn.addEventListener('click', () => escaneando ? detener() : empezar());
-
+btn.addEventListener('click', empezar);
 setInterval(() => { if (vistos.size > 0) actualizarLista(); }, 2000);
 </script>
 </body>
