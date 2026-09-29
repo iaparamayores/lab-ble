@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lab BLE - Ruta Segura</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; font-family: Arial, sans-serif; }
+  body { background: #f0f4f8; padding: 16px; min-height: 100vh; }
+  h1 { color: #1565c0; font-size: 24px; margin-bottom: 8px; }
+  .subtitulo { color: #555; font-size: 14px; margin-bottom: 20px; }
+  #btnEscanear {
+    width: 100%; padding: 18px; font-size: 18px; font-weight: bold;
+    background: #1976d2; color: white; border: none; border-radius: 12px;
+    cursor: pointer; box-shadow: 0 3px 6px rgba(0,0,0,0.2);
+  }
+  #btnEscanear:disabled { background: #9e9e9e; }
+  #btnEscanear.escaneando { background: #d32f2f; }
+  #estado {
+    margin: 16px 0; padding: 12px; background: white;
+    border-radius: 8px; border-left: 4px solid #1976d2; font-size: 16px;
+  }
+  #lista { margin-top: 16px; }
+  .dispositivo {
+    background: white; padding: 14px; margin-bottom: 10px;
+    border-radius: 8px; border-left: 4px solid #43a047;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  }
+  .dispositivo strong { font-size: 17px; color: #1b5e20; }
+  .dispositivo small { display: block; color: #666; margin-top: 4px; font-family: monospace; }
+  .rssi { display: inline-block; padding: 2px 8px; background: #e3f2fd; color: #1976d2; border-radius: 4px; font-size: 13px; margin-top: 4px; }
+  .vacio { color: #999; font-style: italic; text-align: center; padding: 20px; }
+</style>
+</head>
+<body>
+<h1>🧪 Lab BLE</h1>
+<p class="subtitulo">Experimento para Ruta Segura. Escanea tags cercanos.</p>
+
+<button id="btnEscanear">📡 Empezar a escanear</button>
+<div id="estado">Esperando...</div>
+<div id="lista"><p class="vacio">Todavía no hay dispositivos cerca</p></div>
+
+<script>
+const btn = document.getElementById('btnEscanear');
+const estado = document.getElementById('estado');
+const lista = document.getElementById('lista');
+let escaneando = false;
+let scan = null;
+const vistos = new Map();
+
+if (!('bluetooth' in navigator)) {
+  estado.innerHTML = '❌ <strong>Tu navegador no soporta Web Bluetooth.</strong> Usá Chrome en Android.';
+  estado.style.borderLeftColor = '#d32f2f';
+  btn.disabled = true;
+}
+
+function actualizarLista() {
+  if (vistos.size === 0) {
+    lista.innerHTML = '<p class="vacio">Todavía no hay dispositivos cerca</p>';
+    return;
+  }
+  const ordenados = [...vistos.values()].sort((a, b) => b.rssi - a.rssi);
+  lista.innerHTML = ordenados.map(d => `
+    <div class="dispositivo">
+      <strong>${d.nombre || '🔇 Sin nombre'}</strong>
+      <small>ID: ${d.id}</small>
+      <span class="rssi">Señal: ${d.rssi} dBm</span>
+      <small>Visto hace ${Math.round((Date.now() - d.ultimaVez) / 1000)}s</small>
+    </div>
+  `).join('');
+}
+
+async function empezar() {
+  try {
+    estado.innerHTML = '⏳ Pidiendo permiso para escanear...';
+    scan = await navigator.bluetooth.requestLEScan({
+      acceptAllAdvertisements: true
+    });
+    escaneando = true;
+    btn.textContent = '⏹️ Detener escaneo';
+    btn.classList.add('escaneando');
+    estado.innerHTML = '✅ Escaneando. Acercá el celu al tag.';
+
+    navigator.bluetooth.addEventListener('advertisementreceived', event => {
+      const id = event.device.id;
+      const nombre = event.device.name || 'Sin nombre';
+      vistos.set(id, {
+        id: id,
+        nombre: nombre,
+        rssi: event.rssi,
+        ultimaVez: Date.now()
+      });
+      actualizarLista();
+    });
+  } catch (e) {
+    estado.innerHTML = '❌ Error: ' + e.message;
+    estado.style.borderLeftColor = '#d32f2f';
+  }
+}
+
+function detener() {
+  if (scan) scan.stop();
+  escaneando = false;
+  btn.textContent = '📡 Empezar a escanear';
+  btn.classList.remove('escaneando');
+  estado.innerHTML = '⏸️ Escaneo detenido.';
+}
+
+btn.addEventListener('click', () => escaneando ? detener() : empezar());
+
+setInterval(() => { if (vistos.size > 0) actualizarLista(); }, 2000);
+</script>
+</body>
+</html>
